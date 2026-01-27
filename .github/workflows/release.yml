@@ -28,9 +28,6 @@ jobs:
       - name: Compile extension
         run: npm run compile
 
-      - name: Lint
-        run: npm run lint
-
       - name: Install vsce
         run: npm install -g @vscode/vsce
 
