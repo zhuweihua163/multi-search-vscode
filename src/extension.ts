@@ -1234,6 +1234,9 @@ async function addSearchFromWebview(searchTerm: string, isRegex: boolean, isCase
             await updateDecorations(highlight);
         }
     }
+
+    // Auto-save searches if enabled
+    await autoSaveSearches();
 }
 
 async function replaceAllMatches(highlightId: string, replaceText: string) {
@@ -1481,6 +1484,9 @@ async function mergeSearches(fromId: string, toId: string) {
     // Update the webview to refresh the UI and show matches
     webviewProvider.updateWebview();
 
+    // Auto-save searches if enabled
+    await autoSaveSearches();
+
     vscode.window.showInformationMessage(`Searches merged: now searching for lines containing both terms`);
 }
 
@@ -1500,6 +1506,9 @@ async function removeHighlight(highlightId: string) {
 
         // Update webview immediately to reflect removal
         webviewProvider.updateWebview();
+
+        // Auto-save searches if enabled
+        await autoSaveSearches();
     }
 }
 
@@ -1509,6 +1518,9 @@ async function togglePauseHighlight(highlightId: string) {
         highlight.isPaused = !highlight.isPaused;
         await updateAllDecorations();
         webviewProvider.updateWebview();
+
+        // Auto-save searches if enabled
+        await autoSaveSearches();
     }
 }
 
@@ -1530,6 +1542,9 @@ async function changeSearchColor(highlightId: string, newColor: string) {
 
         // Reapply decorations with new color
         await updateAllDecorations();
+
+        // Auto-save searches if enabled
+        await autoSaveSearches();
     }
 }
 
@@ -1543,6 +1558,48 @@ async function clearAllHighlights() {
     });
     searchHighlights.clear();
     await updateAllDecorations();
+
+    // Auto-save searches if enabled
+    await autoSaveSearches();
+}
+
+async function autoSaveSearches() {
+    const config = vscode.workspace.getConfiguration('multiSearch');
+    const autoSaveEnabled = config.get<boolean>('autoSave', false);
+
+    if (!autoSaveEnabled) {
+        return;
+    }
+
+    const fileName = config.get<string>('autoSaveFileName', 'search-filters.json');
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+
+    if (!workspaceFolders || workspaceFolders.length === 0) {
+        return;
+    }
+
+    const searchesData: any[] = [];
+
+    searchHighlights.forEach((highlight) => {
+        searchesData.push({
+            searchTerm: highlight.searchTerm,
+            isRegex: highlight.isRegex,
+            isCaseSensitive: highlight.isCaseSensitive,
+            isWholeWord: highlight.isWholeWord,
+            filePath: highlight.filePath,
+            color: highlight.color,
+            isPaused: highlight.isPaused || false
+        });
+    });
+
+    const jsonContent = JSON.stringify(searchesData, null, 2);
+    const filePath = vscode.Uri.joinPath(workspaceFolders[0].uri, fileName);
+
+    try {
+        await vscode.workspace.fs.writeFile(filePath, Buffer.from(jsonContent, 'utf8'));
+    } catch (error) {
+        console.error('Auto-save failed:', error);
+    }
 }
 
 async function saveSearchesToFile() {
