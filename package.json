@@ -1,0 +1,239 @@
+{
+  "name": "multi-search",
+  "displayName": "Multi-Search",
+  "description": "Search for multiple terms simultaneously with different color highlights",
+  "version": "1.0.0",
+  "icon": "icon.png",
+  "author": "Ghizmo",
+  "publisher": "Ghizmo",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ghizmoo/multi-search-vscode.git"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "license": "MIT",
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "multi-search-container",
+          "title": "Multi-Search",
+          "icon": "multisearch.svg"
+        }
+      ]
+    },
+    "views": {
+      "multi-search-container": [
+        {
+          "id": "multiSearchPanel",
+          "name": "Search Terms",
+          "type": "webview"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "multi-search.addFindWidget",
+        "title": "MultiSearch: Add Search",
+        "icon": "$(add)"
+      },
+      {
+        "command": "multi-search.addSelectionToFind",
+        "title": "MultiSearch: Add Selection to Find"
+      },
+      {
+        "command": "multi-search.addGlobalSearch",
+        "title": "MultiSearch: Add Global Search"
+      },
+      {
+        "command": "multi-search.addSelectionToGlobalSearch",
+        "title": "MultiSearch: Add Selection to Global Search"
+      },
+      {
+        "command": "multi-search.findInFolder",
+        "title": "MultiSearch: Find in Folder..."
+      },
+      {
+        "command": "multi-search.clearAllWidgets",
+        "title": "MultiSearch: Clear All",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "multi-search.goToNextMatch",
+        "title": "MultiSearch: Go to Next Match"
+      },
+      {
+        "command": "multi-search.goToPreviousMatch",
+        "title": "MultiSearch: Go to Previous Match"
+      },
+      {
+        "command": "multi-search.quickPickGoToNextMatch",
+        "title": "MultiSearch: QuickPick Go to Next Match"
+      },
+      {
+        "command": "multi-search.quickPickGoToPreviousMatch",
+        "title": "MultiSearch: QuickPick Go to Previous Match"
+      },
+      {
+        "command": "multi-search.quickPickAccept",
+        "title": "MultiSearch: QuickPick Accept/Save Search"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "multi-search.addSelectionToFind",
+        "key": "ctrl+f",
+        "mac": "cmd+f",
+        "when": "editorHasSelection && config.multiSearch.overrideCtrlF"
+      },
+      {
+        "command": "multi-search.addFindWidget",
+        "key": "ctrl+f",
+        "mac": "cmd+f",
+        "when": "!editorHasSelection && config.multiSearch.overrideCtrlF"
+      },
+      {
+        "command": "multi-search.addSelectionToGlobalSearch",
+        "key": "ctrl+shift+f",
+        "mac": "cmd+shift+f",
+        "when": "editorHasSelection"
+      },
+      {
+        "command": "multi-search.addGlobalSearch",
+        "key": "ctrl+shift+f",
+        "mac": "cmd+shift+f",
+        "when": "!editorHasSelection"
+      },
+      {
+        "command": "multi-search.goToNextMatch",
+        "key": "f4"
+      },
+      {
+        "command": "multi-search.goToPreviousMatch",
+        "key": "shift+f4"
+      },
+      {
+        "command": "multi-search.quickPickGoToNextMatch",
+        "key": "f3",
+        "when": "inQuickOpen"
+      },
+      {
+        "command": "multi-search.quickPickGoToPreviousMatch",
+        "key": "shift+f3",
+        "when": "inQuickOpen"
+      },
+      {
+        "command": "multi-search.quickPickAccept",
+        "key": "ctrl+s",
+        "mac": "cmd+s",
+        "when": "inQuickOpen && config.multiSearch.enterNavigatesMatches"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "multi-search.addFindWidget",
+          "when": "view == multiSearchPanel",
+          "group": "navigation"
+        },
+        {
+          "command": "multi-search.clearAllWidgets",
+          "when": "view == multiSearchPanel",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "multi-search.findInFolder",
+          "when": "explorerResourceIsFolder",
+          "group": "2_workspace"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "MultiSearch",
+      "properties": {
+        "multiSearch.mergeModifierKey": {
+          "type": "string",
+          "enum": [
+            "ctrl",
+            "alt",
+            "shift"
+          ],
+          "default": "ctrl",
+          "description": "Modifier key to use when dragging to merge search terms (Ctrl, Alt, or Shift). On Mac, Ctrl becomes Cmd automatically."
+        },
+        "multiSearch.showFileFiltersByDefault": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show 'Files to include' and 'Files to exclude' filters by default in the search panel."
+        },
+        "multiSearch.maxThreads": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 64,
+          "description": "Number of threads to use for ripgrep searches. When set to 0, ripgrep automatically determines the optimal number of threads based on your CPU."
+        },
+        "multiSearch.defaultDisplayMode": {
+          "type": "string",
+          "enum": [
+            "tree",
+            "flat"
+          ],
+          "default": "tree",
+          "description": "Default display mode for global search results: 'tree' shows files in folder structure, 'flat' shows files as a simple list (like VSCode native search)."
+        },
+        "multiSearch.autoExpandResults": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically expand folders and files in global search results when a search completes. When disabled, only the file/folder list is shown without expanding individual match lines."
+        },
+        "multiSearch.overrideCtrlF": {
+          "type": "boolean",
+          "default": false,
+          "description": "Override Ctrl+F (Cmd+F on Mac) to use MultiSearch instead of VSCode's native search. When disabled, Ctrl+F uses the default VSCode search behavior."
+        },
+        "multiSearch.enterNavigatesMatches": {
+          "type": "boolean",
+          "default": false,
+          "description": "When enabled, pressing Enter in the search quick pick navigates to the next match (like F3), and Ctrl+S (Cmd+S on Mac) saves the search. When disabled, Enter saves the search (default behavior)."
+        },
+        "multiSearch.markVisitedMatches": {
+          "type": "boolean",
+          "default": true,
+          "description": "When enabled, clicking on a match line will visually mark it as visited (grayed out text) to help track which matches have been reviewed."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "16.x",
+    "@types/vscode": "^1.75.0",
+    "@typescript-eslint/eslint-plugin": "^5.45.0",
+    "@typescript-eslint/parser": "^5.45.0",
+    "eslint": "^8.28.0",
+    "glob": "^13.0.0",
+    "mocha": "^11.7.5",
+    "typescript": "^4.9.3"
+  },
+  "dependencies": {
+    "@vscode/codicons": "^0.0.41"
+  }
+}
