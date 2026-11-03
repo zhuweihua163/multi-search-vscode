@@ -2623,8 +2623,8 @@ export class MultipleFindViewProvider implements vscode.WebviewViewProvider {
                     Array.from(groupedMatches.values()).forEach(group => {
                         html += \`
                             <div class="line-match"
-                                 onclick="openFileAtLine('\${file.fullPath}', \${group.line}, '\${workspaceRoot || ''}', event)"
-                                 onmouseover="handleLineHover('\${file.fullPath}', \${group.line}, '\${workspaceRoot || ''}', event)"
+                                 onclick="openFileAtLine(\${escapeJsStringForHtmlAttribute(file.fullPath)}, \${group.line}, \${escapeJsStringForHtmlAttribute(workspaceRoot || '')}, event)"
+                                 onmouseover="handleLineHover(\${escapeJsStringForHtmlAttribute(file.fullPath)}, \${group.line}, \${escapeJsStringForHtmlAttribute(workspaceRoot || '')}, event)"
                                  onmouseout="handleLineOut(event)"
                                  style="cursor: pointer; margin-left: \${(level + 2) * 8}px;"
                                  title="Click to open, Ctrl+Hover for preview">
@@ -2709,8 +2709,8 @@ export class MultipleFindViewProvider implements vscode.WebviewViewProvider {
                 Array.from(groupedMatches.values()).forEach(group => {
                     html += \`
                         <div class="line-match"
-                             onclick="openFileAtLine('\${fileDetail.filePath}', \${group.line}, '\${workspaceRoot || ''}', event)"
-                             onmouseover="handleLineHover('\${fileDetail.filePath}', \${group.line}, '\${workspaceRoot || ''}', event)"
+                             onclick="openFileAtLine(\${escapeJsStringForHtmlAttribute(fileDetail.filePath)}, \${group.line}, \${escapeJsStringForHtmlAttribute(workspaceRoot || '')}, event)"
+                             onmouseover="handleLineHover(\${escapeJsStringForHtmlAttribute(fileDetail.filePath)}, \${group.line}, \${escapeJsStringForHtmlAttribute(workspaceRoot || '')}, event)"
                              onmouseout="handleLineOut(event)"
                              style="cursor: pointer; margin-left: 16px;"
                              title="Click to open, Ctrl+Hover for preview">
@@ -3719,6 +3719,17 @@ export class MultipleFindViewProvider implements vscode.WebviewViewProvider {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        function escapeJsStringForHtmlAttribute(value) {
+            const jsString = JSON.stringify(String(value))
+                .replace(/\\u2028/g, '\\\\u2028')
+                .replace(/\\u2029/g, '\\\\u2029');
+            return jsString
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
         }
 
         // Create elegant match preview with highlighting
