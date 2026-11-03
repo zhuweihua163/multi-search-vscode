@@ -33,7 +33,7 @@ export function initSearchOperations(dependencies: SearchOperationsDependencies)
 
 /**
  * Updates decorations for a search highlight using in-memory search.
- * Used for unsaved files that don't exist on disk yet.
+ * Used for unsaved or dirty documents whose latest text is not on disk.
  *
  * @param editor - The VSCode text editor
  * @param highlight - The search highlight configuration
@@ -41,12 +41,12 @@ export function initSearchOperations(dependencies: SearchOperationsDependencies)
  * @param currentFileMatches - Array to populate with match details
  */
 export async function updateDecorationsInMemory(
-    editor: vscode.TextEditor,
+    document: vscode.TextDocument,
     highlight: SearchHighlight,
     decorations: vscode.DecorationOptions[],
     currentFileMatches: LineMatch[]
 ): Promise<void> {
-    const text = editor.document.getText();
+    const text = document.getText();
     const lines = text.split('\n');
 
     let searchRegex: RegExp;
@@ -122,6 +122,10 @@ export async function updateDecorationsInMemory(
             matchStart: matchStartCol,
             matchEnd: matchStartCol + matchText.length
         });
+
+        if (match[0].length === 0) {
+            searchRegex.lastIndex++;
+        }
     }
 
     // 
@@ -183,11 +187,11 @@ export async function updateDecorations(highlight: SearchHighlight, skipWebviewU
 
         // Check if this is an unsaved file (no fsPath or untitled scheme)
         const fs = require('fs');
-        const isUnsavedFile = !filePath || editor.document.uri.scheme === 'untitled' || !fs.existsSync(filePath);
+        const useInMemorySearch = !filePath || editor.document.uri.scheme === 'untitled' || editor.document.isDirty || !fs.existsSync(filePath);
 
-        if (isUnsavedFile) {
-            // Use in-memory search for unsaved files
-            await updateDecorationsInMemory(editor, highlight, decorations, currentFileMatches);
+        if (useInMemorySearch) {
+            // Use in-memory search for unsaved or dirty documents
+            await updateDecorationsInMemory(editor.document, highlight, decorations, currentFileMatches);
             editor.setDecorations(highlight.decorationType, decorations);
             highlight.currentFileMatches = currentFileMatches;
 
@@ -904,13 +908,17 @@ export async function searchInFiles(highlight: SearchHighlight): Promise<void> {
 }
 
 /**
- * Updates file search results for a specific document using ripgrep.
- * Called when a document is saved to update search results for that file.
+ * Updates file search results for a document using its text or ripgrep.
+ * Uses document text for debounced unsaved edits and ripgrep for saved files.
  *
  * @param document - The VSCode text document to update search results for
  * @param highlight - The search highlight to update
  */
-export async function updateFileSearchForDocument(document: vscode.TextDocument, highlight: SearchHighlight): Promise<void> {
+export async function updateFileSearchForDocument(
+    document: vscode.TextDocument,
+    highlight: SearchHighlight,
+    useDocumentText: boolean = false
+): Promise<void> {
     const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
     if (!workspaceFolder) return;
 
@@ -918,6 +926,47 @@ export async function updateFileSearchForDocument(document: vscode.TextDocument,
     const filePath = path.normalize(document.uri.fsPath);
     const normalizedWorkspacePath = path.normalize(workspaceFolder.uri.fsPath);
     const relativePath = path.relative(normalizedWorkspacePath, filePath);
+    const docUri = document.uri.toString();
+
+    const updateFileMatches = (count: number, lineMatches: LineMatch[]) => {
+        if (count > 0) {
+            highlight.fileMatches?.set(docUri, count);
+
+            if (highlight.fileMatchDetails) {
+                const existingIndex = highlight.fileMatchDetails.findIndex(f => f.filePath === relativePath);
+                const fileMatchDetail = {
+                    filePath: relativePath,
+                    matchCount: count,
+                    lines: lineMatches
+                };
+                if (existingIndex >= 0) {
+                    highlight.fileMatchDetails[existingIndex] = fileMatchDetail;
+                } else {
+                    highlight.fileMatchDetails.push(fileMatchDetail);
+                }
+            }
+        } else {
+            highlight.fileMatches?.delete(docUri);
+            if (highlight.fileMatchDetails) {
+                highlight.fileMatchDetails = highlight.fileMatchDetails.filter(f => f.filePath !== relativePath);
+            }
+        }
+    };
+
+    if (useDocumentText) {
+        const lineMatches: LineMatch[] = [];
+        try {
+            await updateDecorationsInMemory(document, highlight, [], lineMatches);
+        } catch (error) {
+            console.error(`Failed to update in-memory file search for ${filePath}: ${error}`);
+            vscode.window.showErrorMessage(`Failed to update file search results for ${relativePath}: ${error}`);
+            return;
+        }
+
+        updateFileMatches(lineMatches.length, lineMatches);
+        deps.webviewProvider.updateWebview();
+        return;
+    }
 
     // Build ripgrep arguments for single file - optimized for performance
     const args: string[] = [
@@ -1037,38 +1086,7 @@ export async function updateFileSearchForDocument(document: vscode.TextDocument,
     // Wait for process to complete
     await new Promise<void>((resolve) => {
         rgProcess.on('close', () => {
-            const docUri = document.uri.toString();
-
-            if (count > 0) {
-                // Update or add the file match
-                highlight.fileMatches?.set(docUri, count);
-
-                // Update file match details
-                if (highlight.fileMatchDetails) {
-                    const existingIndex = highlight.fileMatchDetails.findIndex(f => f.filePath === relativePath);
-                    if (existingIndex >= 0) {
-                        // Update existing entry
-                        highlight.fileMatchDetails[existingIndex] = {
-                            filePath: relativePath,
-                            matchCount: count,
-                            lines: lineMatches
-                        };
-                    } else {
-                        // Add new entry
-                        highlight.fileMatchDetails.push({
-                            filePath: relativePath,
-                            matchCount: count,
-                            lines: lineMatches
-                        });
-                    }
-                }
-            } else {
-                // No matches - remove from results
-                highlight.fileMatches?.delete(docUri);
-                if (highlight.fileMatchDetails) {
-                    highlight.fileMatchDetails = highlight.fileMatchDetails.filter(f => f.filePath !== relativePath);
-                }
-            }
+            updateFileMatches(count, lineMatches);
 
             // Update webview
             deps.webviewProvider.updateWebview();

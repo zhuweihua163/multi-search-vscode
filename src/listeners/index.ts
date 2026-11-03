@@ -12,7 +12,7 @@ export interface ListenerDependencies {
     searchMatchIndices: Map<string, number>;
     webviewProvider: any;  // MultipleFindViewProvider instance
     updateAllDecorations: (skipWebviewUpdate?: boolean) => Promise<void>;
-    updateFileSearchForDocument: (document: vscode.TextDocument, highlight: SearchHighlight) => Promise<void>;
+    updateFileSearchForDocument: (document: vscode.TextDocument, highlight: SearchHighlight, useDocumentText?: boolean) => Promise<void>;
 }
 
 /**
@@ -26,6 +26,15 @@ export function registerEventListeners(
     context: vscode.ExtensionContext,
     deps: ListenerDependencies
 ): void {
+    const pendingDocumentUpdates = new Map<string, ReturnType<typeof setTimeout>>();
+
+    context.subscriptions.push({
+        dispose: () => {
+            pendingDocumentUpdates.forEach(timer => clearTimeout(timer));
+            pendingDocumentUpdates.clear();
+        }
+    });
+
     // Update decorations when active editor changes
     vscode.window.onDidChangeActiveTextEditor(async editor => {
         if (editor) {
@@ -103,27 +112,67 @@ export function registerEventListeners(
         }
     }, null, context.subscriptions);
 
-    // Update decorations when document changes
-    vscode.workspace.onDidChangeTextDocument(async event => {
+    // Debounce document updates so typing does not trigger a search for every character
+    vscode.workspace.onDidChangeTextDocument(event => {
         const editor = vscode.window.activeTextEditor;
-        if (editor && event.document === editor.document) {
-            await deps.updateAllDecorations();
-        }
+        if (!editor || event.document !== editor.document) return;
+
+        const document = event.document;
+        const documentKey = document.uri.toString();
+        const pendingTimer = pendingDocumentUpdates.get(documentKey);
+        if (pendingTimer) clearTimeout(pendingTimer);
+
+        const timer = setTimeout(async () => {
+            pendingDocumentUpdates.delete(documentKey);
+
+            try {
+                if (vscode.window.activeTextEditor?.document === document) {
+                    await deps.updateAllDecorations();
+                }
+
+                const docUri = document.uri.toString();
+                const updates = Array.from(deps.searchHighlights.values())
+                    .filter(highlight => highlight.filePath &&
+                        ((highlight.fileMatches && highlight.fileMatches.has(docUri)) ||
+                            shouldSearchInFile(document.uri, highlight.filePath)))
+                    .map(highlight => deps.updateFileSearchForDocument(document, highlight, true));
+
+                await Promise.all(updates);
+            } catch (error) {
+                console.error(`Failed to refresh search results after editing ${document.uri}: ${error}`);
+                vscode.window.showErrorMessage(`Failed to refresh search results: ${error}`);
+            }
+        }, 500);
+
+        pendingDocumentUpdates.set(documentKey, timer);
     }, null, context.subscriptions);
 
-    // Update global search results when a file is saved
+    // Update search results when a file is saved
     vscode.workspace.onDidSaveTextDocument(async document => {
+        const documentKey = document.uri.toString();
+        const pendingTimer = pendingDocumentUpdates.get(documentKey);
+        if (pendingTimer) {
+            clearTimeout(pendingTimer);
+            pendingDocumentUpdates.delete(documentKey);
+        }
+
+        if (vscode.window.activeTextEditor?.document === document) {
+            await deps.updateAllDecorations();
+        }
+
         // Update file search results if the saved document matches any file search patterns
-        deps.searchHighlights.forEach(async (highlight) => {
+        const updates: Promise<void>[] = [];
+        deps.searchHighlights.forEach(highlight => {
             if (highlight.filePath) {
                 // Check if this document is part of the search results or should be searched
                 const docUri = document.uri.toString();
                 if ((highlight.fileMatches && highlight.fileMatches.has(docUri)) || shouldSearchInFile(document.uri, highlight.filePath)) {
                     // Re-search this specific file
-                    await deps.updateFileSearchForDocument(document, highlight);
+                    updates.push(deps.updateFileSearchForDocument(document, highlight));
                 }
             }
         });
+        await Promise.all(updates);
     }, null, context.subscriptions);
 
     // Update file search results when new files are created (from VSCode)
