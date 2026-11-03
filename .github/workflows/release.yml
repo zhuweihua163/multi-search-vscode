@@ -35,6 +35,12 @@ jobs:
       - name: Package extension
         run: vsce package
 
+      - name: Upload VSIX Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vscode-extension-vsix
+          path: *.vsix
+
       - name: Get package version
         id: package_version
         run: |
