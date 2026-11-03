@@ -3,15 +3,15 @@ name: Release
 on:
   push:
     tags:
-      - 'v*.*.*'  # Trigger on version tags like v1.0.0, v1.2.3, etc.
-  workflow_dispatch:  # Allow manual triggering of the workflow
+      - 'v*.*.*'
+  workflow_dispatch:
 
 jobs:
   release:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: write  # Required to create releases
+      contents: write
 
     steps:
       - name: Checkout code
@@ -50,7 +50,7 @@ jobs:
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')  # only execute this when pushing a tag
+        if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
             *.vsix
@@ -58,11 +58,9 @@ jobs:
             ## Multi-Search ${{ steps.package_version.outputs.version }}
 
             ### What's Changed
-
-            See the full [CHANGELOG.md](https://github.com/Ghizmoo/multi-search-vscode/blob/main/CHANGELOG.md) for details.
+            See the full [CHANGELOG.md](https://github.com/zhuweihua163/multi-search-vscode/blob/main/CHANGELOG.md) for details.
 
             ### Requirements
-
             Please install [ripgrep](https://github.com/BurntSushi/ripgrep#installation) for file search functionality.
           draft: false
           prerelease: false
