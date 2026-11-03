@@ -5,7 +5,7 @@ import * as path from 'path';
 // Import types and utilities from new module structure
 import { LineMatch, SearchHighlight } from './types';
 import { COLORS, openFileFromPath, byteOffsetToCharOffset } from './utils';
-import { createRegex, initSearchOperations, updateDecorations, updateAllDecorations, searchInFiles, updateFileSearchForDocument } from './search';
+import { createRegex, getRipgrepExcludeGlobs, initSearchOperations, updateDecorations, updateAllDecorations, searchInFiles, updateFileSearchForDocument } from './search';
 import { createSearchDecorations } from './core';
 import { getHighlightedLine, MultipleFindViewProvider, WebviewProviderDependencies, createPreviewDecorationType, createNavigationButtons, updateQuickPickButtons, isButtonClick } from './ui';
 import { registerCommands, CommandHandlers } from './commands';
@@ -260,10 +260,12 @@ async function addSelectionToGlobalSearch() {
                 '--fixed-strings',
                 '--ignore-case', // Always case insensitive for quick pick
                 '--glob', '!**/node_modules/**',
-                '--glob', '!**/.git/**',
-                '-e', searchText,
-                '.'  // Search in current directory (workspace root)
+                '--glob', '!**/.git/**'
             ];
+            for (const excludeGlob of getRipgrepExcludeGlobs(vscode.Uri.file(workspaceRoot))) {
+                args.push('--glob', excludeGlob);
+            }
+            args.push('-e', searchText, '.'); // Search in current directory (workspace root)
 
             // Add threads configuration
             const maxThreads = vscode.workspace.getConfiguration('multiSearch').get<number>('maxThreads', 0);

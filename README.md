@@ -103,6 +103,7 @@ For global searches, you can filter which files to search:
 **Files to Exclude:**
 - Single pattern: `**/node_modules/**`
 - Multiple patterns: `**/*.test.ts, **/dist/**, **/node_modules/**`
+- VS Code workspace `files.exclude` patterns are also excluded automatically; these are combined with the search's own exclude patterns.
 
 **Glob Pattern Examples:**
 - `**/*.js` - All JavaScript files

@@ -150,80 +150,92 @@ export function shouldExcludeFile(fileUri: vscode.Uri, excludePatterns: string |
         const cleanPattern = pattern.startsWith('!') ? pattern.substring(1) : pattern;
         const normalizedPattern = cleanPattern.replace(/\\/g, '/');
 
-        // Check if pattern matches the filename exactly
-        if (normalizedPattern === fileName) {
+        if (matchesGlobPath(normalizedRelativePath, normalizedPattern) ||
+            matchesGlobPath(fileName, normalizedPattern)) {
             return true;
         }
 
-        // Check if pattern matches the relative path exactly
-        if (normalizedPattern === normalizedRelativePath) {
-            return true;
-        }
-
-        // Check glob patterns with wildcards
-        if (normalizedPattern.includes('*')) {
-            // Simple glob matching for common patterns
-            if (normalizedPattern.startsWith('**/*')) {
-                // Pattern like **/test/** or **/*.md
-                const suffix = normalizedPattern.substring(4);
-                if (suffix.startsWith('.')) {
-                    // Extension pattern like **/*.md
-                    if (fileName.endsWith(suffix)) {
-                        return true;
-                    }
-                } else if (normalizedRelativePath.includes(suffix.replace(/\/?\*\*.*$/, ''))) {
-                    return true;
-                }
-            } else if (normalizedPattern.startsWith('*.')) {
-                // Extension pattern like *.md
-                if (fileName.endsWith(normalizedPattern.substring(1))) {
-                    return true;
-                }
-            } else if (normalizedPattern.endsWith('/**')) {
-                // Directory pattern like test/**
-                const prefix = normalizedPattern.substring(0, normalizedPattern.length - 3);
-                if (normalizedRelativePath.startsWith(prefix + '/') || normalizedRelativePath === prefix) {
-                    return true;
-                }
-            } else if (normalizedPattern.includes('*')) {
-                // Other wildcard patterns - use simple prefix/suffix matching
-                const parts = normalizedPattern.split('*');
-                let matches = true;
-                let searchFrom = 0;
-                for (let i = 0; i < parts.length; i++) {
-                    const part = parts[i];
-                    if (part === '') continue;
-                    if (i === 0) {
-                        // First part must match from the start
-                        if (!normalizedRelativePath.startsWith(part)) {
-                            matches = false;
-                            break;
-                        }
-                        searchFrom = part.length;
-                    } else if (i === parts.length - 1) {
-                        // Last part must match at the end
-                        if (!normalizedRelativePath.endsWith(part)) {
-                            matches = false;
-                            break;
-                        }
-                    } else {
-                        // Middle parts must be found in order
-                        const index = normalizedRelativePath.indexOf(part, searchFrom);
-                        if (index === -1) {
-                            matches = false;
-                            break;
-                        }
-                        searchFrom = index + part.length;
-                    }
-                }
-                if (matches) {
-                    return true;
-                }
+        if (normalizedPattern.endsWith('/**')) {
+            const directoryPattern = normalizedPattern.slice(0, -3);
+            const pathSegments = normalizedRelativePath.split('/');
+            if (pathSegments.some((_, index) =>
+                matchesGlobPath(pathSegments.slice(0, index + 1).join('/'), directoryPattern))) {
+                return true;
             }
         }
     }
 
     return false;
+}
+
+export function matchesGlobPath(filePath: string, globPattern: string): boolean {
+    const normalizedPath = filePath.replace(/\\/g, '/');
+    const normalizedPattern = globPattern.replace(/\\/g, '/').replace(/^\/+/, '');
+    let regexPattern = '^';
+
+    for (let i = 0; i < normalizedPattern.length; i++) {
+        const char = normalizedPattern[i];
+        if (char === '*' && normalizedPattern[i + 1] === '*') {
+            i++;
+            if (normalizedPattern[i + 1] === '/') {
+                regexPattern += '(?:.*/)?';
+                i++;
+            } else {
+                regexPattern += '.*';
+            }
+        } else if (char === '*') {
+            regexPattern += '[^/]*';
+        } else if (char === '?') {
+            regexPattern += '[^/]';
+        } else {
+            regexPattern += char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+    }
+
+    const matcher = new RegExp(`${regexPattern}$`);
+    const segments = normalizedPath.split('/');
+    return segments.some((_, index) => matcher.test(segments.slice(0, index + 1).join('/')));
+}
+
+export function getWorkspaceExcludePatterns(resource: vscode.Uri): string[] {
+    const excludeSettings = vscode.workspace
+        .getConfiguration('files', resource)
+        .get<Record<string, boolean>>('exclude', {});
+
+    return Object.entries(excludeSettings)
+        .filter(([, enabled]) => enabled === true)
+        .map(([pattern]) => pattern.replace(/\\/g, '/'));
+}
+
+export function toRipgrepExcludeGlobs(workspaceExcludePatterns: string[], customExcludePath?: string): string[] {
+    const globs = new Set<string>();
+
+    for (const pattern of workspaceExcludePatterns) {
+        globs.add(`!${pattern}`);
+        if (!pattern.endsWith('/**')) {
+            globs.add(`!${pattern.replace(/\/+$/, '')}/**`);
+        }
+    }
+
+    if (customExcludePath) {
+        for (const pattern of customExcludePath.split(',').map(item => item.trim()).filter(Boolean)) {
+            globs.add(pattern.startsWith('!') ? pattern : `!${pattern.replace(/\\/g, '/')}`);
+        }
+    }
+
+    return Array.from(globs);
+}
+
+export function getRipgrepExcludeGlobs(resource: vscode.Uri, customExcludePath?: string): string[] {
+    return toRipgrepExcludeGlobs(getWorkspaceExcludePatterns(resource), customExcludePath);
+}
+
+export function isExcludedByWorkspaceSettings(fileUri: vscode.Uri): boolean {
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(fileUri);
+    if (!workspaceFolder) return false;
+
+    const relativePath = path.relative(workspaceFolder.uri.fsPath, fileUri.fsPath).replace(/\\/g, '/');
+    return getWorkspaceExcludePatterns(fileUri).some(pattern => matchesGlobPath(relativePath, pattern));
 }
 
 /**

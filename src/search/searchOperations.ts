@@ -4,7 +4,7 @@ import * as path from 'path';
 import { LineMatch, SearchHighlight } from '../types';
 import { RG_PATH, byteOffsetToCharOffset, buildRegexWithEscapeSequences, buildRegexPatternWithEscapeSequences, hasEscapeSequences } from '../utils';
 import { updateFileMatchesFromMap } from '../core';
-import { shouldExcludeFile } from './searchUtils';
+import { getRipgrepExcludeGlobs, isExcludedByWorkspaceSettings, shouldExcludeFile } from './searchUtils';
 
 
 /**
@@ -669,9 +669,14 @@ export async function searchInFiles(highlight: SearchHighlight): Promise<void> {
 
         // Add file path or glob patterns
         if (isSpecificFile) {
-            // For specific files, don't use globs, just pass the file directly
-            // Convert to absolute path if it's not already
+            // Search a specific file directly after checking all exclusion sources
             const absolutePath = path.isAbsolute(specificFilePath) ? specificFilePath : path.join(workspaceRoot, specificFilePath);
+            const specificFileUri = vscode.Uri.file(absolutePath);
+            if (isExcludedByWorkspaceSettings(specificFileUri) || shouldExcludeFile(specificFileUri, highlight.excludePath)) {
+                highlight.isSearching = false;
+                deps.webviewProvider.updateWebview();
+                return;
+            }
             args.push(absolutePath);
         } else {
             // For directories or glob patterns, use glob filtering
@@ -686,15 +691,9 @@ export async function searchInFiles(highlight: SearchHighlight): Promise<void> {
             args.push('--glob', '!**/node_modules/**');
             args.push('--glob', '!**/.git/**');
 
-            // Add user-specified exclude patterns
-            if (highlight.excludePath) {
-                // Support multiple patterns separated by comma
-                const excludePatterns = highlight.excludePath.split(',').map(p => p.trim()).filter(p => p);
-                for (const pattern of excludePatterns) {
-                    // Add ! prefix if not already present
-                    const excludeGlob = pattern.startsWith('!') ? pattern : `!${pattern}`;
-                    args.push('--glob', excludeGlob);
-                }
+            // Merge workspace excludes with the plugin's own exclude patterns
+            for (const excludeGlob of getRipgrepExcludeGlobs(vscode.Uri.file(workspaceRoot), highlight.excludePath)) {
+                args.push('--glob', excludeGlob);
             }
 
             // Add the search path - use '.' since cwd is already set to workspaceRoot
@@ -952,6 +951,12 @@ export async function updateFileSearchForDocument(
             }
         }
     };
+
+    if (isExcludedByWorkspaceSettings(document.uri) || shouldExcludeFile(document.uri, highlight.excludePath)) {
+        updateFileMatches(0, []);
+        deps.webviewProvider.updateWebview();
+        return;
+    }
 
     if (useDocumentText) {
         const lineMatches: LineMatch[] = [];
