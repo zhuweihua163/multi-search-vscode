@@ -198,11 +198,14 @@ export function matchesGlobPath(filePath: string, globPattern: string): boolean 
 }
 
 export function getWorkspaceExcludePatterns(resource: vscode.Uri): string[] {
-    const excludeSettings = vscode.workspace
+    const filesExclude = vscode.workspace
         .getConfiguration('files', resource)
         .get<Record<string, boolean>>('exclude', {});
+    const searchExclude = vscode.workspace
+        .getConfiguration('search', resource)
+        .get<Record<string, boolean>>('exclude', {});
 
-    return Object.entries(excludeSettings)
+    return Object.entries({ ...filesExclude, ...searchExclude })
         .filter(([, enabled]) => enabled === true)
         .map(([pattern]) => pattern.replace(/\\/g, '/'));
 }
