@@ -3458,7 +3458,7 @@ export class MultipleFindViewProvider implements vscode.WebviewViewProvider {
                     }
 
                     // Only update match lists when search is finished (not during progressive updates)
-                    if (!search.isSearching && hasMatches) {
+                    if (!search.isSearching && (hasMatches || search.filePath)) {
                         // For global searches, we need to detect if file content changed (line numbers etc.)
                         // Create a simple hash of the fileMatchDetails to detect changes
                         const fileMatchesList = document.getElementById('files-' + search.id);
