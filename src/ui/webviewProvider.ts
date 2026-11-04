@@ -3465,10 +3465,26 @@ export class MultipleFindViewProvider implements vscode.WebviewViewProvider {
                         const currentMatchesList = document.getElementById('current-matches-' + search.id);
                         let currentHash = '';
                         if (search.fileMatchDetails && search.fileMatchDetails.length > 0) {
-                            // Hash based on file paths and line numbers
-                            currentHash = search.fileMatchDetails.map(f =>
-                                f.filePath + ':' + f.lines.map(l => l.line).join(',')
-                            ).join('|');
+                            let contentHash = 2166136261;
+                            const updateHash = value => {
+                                const text = String(value);
+                                contentHash = Math.imul(contentHash ^ text.length, 16777619);
+                                for (let i = 0; i < text.length; i++) {
+                                    contentHash = Math.imul(contentHash ^ text.charCodeAt(i), 16777619);
+                                }
+                            };
+
+                            for (const file of search.fileMatchDetails) {
+                                updateHash(file.filePath);
+                                for (const line of file.lines) {
+                                    updateHash(line.line);
+                                    updateHash(line.column);
+                                    updateHash(line.matchStart);
+                                    updateHash(line.matchEnd);
+                                    updateHash(line.lineText);
+                                }
+                            }
+                            currentHash = \`\${search.fileMatchDetails.length}:\${contentHash >>> 0}\`;
                         } else if (!search.filePath && search.currentFileName) {
                             // Hash for current file matches - include file name to detect file changes
                             const matchesHash = search.currentFileMatches && search.currentFileMatches.length > 0
