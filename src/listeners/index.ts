@@ -114,10 +114,9 @@ export function registerEventListeners(
 
     // Debounce document updates so typing does not trigger a search for every character
     vscode.workspace.onDidChangeTextDocument(event => {
-        const editor = vscode.window.activeTextEditor;
-        if (!editor || event.document !== editor.document) return;
-
         const document = event.document;
+        if (!vscode.workspace.getWorkspaceFolder(document.uri)) return;
+
         const documentKey = document.uri.toString();
         const pendingTimer = pendingDocumentUpdates.get(documentKey);
         if (pendingTimer) clearTimeout(pendingTimer);

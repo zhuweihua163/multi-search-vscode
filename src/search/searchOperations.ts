@@ -4,7 +4,7 @@ import * as path from 'path';
 import { LineMatch, SearchHighlight } from '../types';
 import { RG_PATH, byteOffsetToCharOffset, buildRegexWithEscapeSequences, buildRegexPatternWithEscapeSequences, hasEscapeSequences } from '../utils';
 import { updateFileMatchesFromMap } from '../core';
-import { getRipgrepExcludeGlobs, isExcludedByWorkspaceSettings, shouldExcludeFile } from './searchUtils';
+import { getRipgrepExcludeGlobs, isExcludedByWorkspaceSettings, shouldExcludeFile, shouldSearchInFile } from './searchUtils';
 
 
 /**
@@ -835,7 +835,7 @@ export async function searchInFiles(highlight: SearchHighlight): Promise<void> {
 
         // Handle process completion
         await new Promise<void>((resolve, reject) => {
-            rgProcess.on('close', (code) => {
+            rgProcess.on('close', async (code) => {
 
                 // Clear searching flag and process reference
                 highlight.isSearching = false;
@@ -848,15 +848,30 @@ export async function searchInFiles(highlight: SearchHighlight): Promise<void> {
 
                 // Update with final results
                 updateFileMatchesFromMap(highlight, fileMatchMap, workspaceRoot);
+
+                // Ripgrep only sees saved files, so replace those results with the
+                // current text for any matching documents that have unsaved edits.
+                for (const document of vscode.workspace.textDocuments) {
+                    if (!document.isDirty || !shouldSearchInFile(document.uri, highlight.filePath!)) {
+                        continue;
+                    }
+
+                    const documentWorkspace = vscode.workspace.getWorkspaceFolder(document.uri);
+                    if (!documentWorkspace ||
+                        path.normalize(documentWorkspace.uri.fsPath) !== path.normalize(workspaceRoot)) {
+                        continue;
+                    }
+
+                    await updateFileSearchForDocument(document, highlight, true);
+                }
+
                 deps.webviewProvider.updateWebview();
 
 
                 // Code 0 = matches found, Code 1 = no matches, Code 2 = error
                 if (code === 0 || code === 1) {
-                    // Calculate total matches by summing line counts (each line entry is a match)
-                    // This matches the webview calculation: file.lines.length
-                    const totalMatches = Array.from(fileMatchMap.values()).reduce((sum, fileData) => sum + fileData.lines.length, 0);
-                    const fileCount = fileMatchMap.size;
+                    const totalMatches = highlight.fileMatchDetails?.reduce((sum, file) => sum + file.lines.length, 0) || 0;
+                    const fileCount = highlight.fileMatchDetails?.length || 0;
 
                     if (fileCount > 0) {
                         vscode.window.showInformationMessage(`Found ${totalMatches} matches in ${fileCount} files`);

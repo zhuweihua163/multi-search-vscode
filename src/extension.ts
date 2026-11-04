@@ -5,7 +5,7 @@ import * as path from 'path';
 // Import types and utilities from new module structure
 import { LineMatch, SearchHighlight } from './types';
 import { COLORS, openFileFromPath, byteOffsetToCharOffset } from './utils';
-import { createRegex, getRipgrepExcludeGlobs, initSearchOperations, updateDecorations, updateAllDecorations, searchInFiles, updateFileSearchForDocument } from './search';
+import { createRegex, getRipgrepExcludeGlobs, initSearchOperations, updateDecorations, updateAllDecorations, searchInFiles, updateFileSearchForDocument, updateDecorationsInMemory, isExcludedByWorkspaceSettings, shouldExcludeFile } from './search';
 import { createSearchDecorations } from './core';
 import { getHighlightedLine, MultipleFindViewProvider, WebviewProviderDependencies, createPreviewDecorationType, createNavigationButtons, updateQuickPickButtons, isButtonClick } from './ui';
 import { registerCommands, CommandHandlers } from './commands';
@@ -203,7 +203,7 @@ async function addSelectionToGlobalSearch() {
     quickPick.value = selectedText;
 
     let currentMatchIndex = 0;
-    let matches: {line: number, column: number, text: string, file: string}[] = [];
+    let matches: {line: number, column: number, matchEnd: number, text: string, file: string}[] = [];
     let previewDecorationType = createPreviewDecorationType();
     let cachedMatchData: LineMatch[] = []; // Store ripgrep results to reuse when adding search
     let currentSearchProcess: cp.ChildProcess | undefined; // Track current ripgrep process
@@ -306,6 +306,7 @@ async function addSelectionToGlobalSearch() {
                                 matches.push({
                                     line: lineNum,
                                     column: matchStartChar,
+                                    matchEnd: matchEndChar,
                                     text: lineText,
                                     file: filePath
                                 });
@@ -336,10 +337,63 @@ async function addSelectionToGlobalSearch() {
 
             // Wait for process to complete
             await new Promise<void>((resolve) => {
-                rgProcess.on('close', () => {
+                rgProcess.on('close', async () => {
                     // Clear process reference
                     if (currentSearchProcess === rgProcess) {
                         currentSearchProcess = undefined;
+                    }
+
+                    const samePath = (left: string, right: string) => {
+                        const normalizedLeft = path.normalize(path.resolve(left));
+                        const normalizedRight = path.normalize(path.resolve(right));
+                        return process.platform === 'win32'
+                            ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
+                            : normalizedLeft === normalizedRight;
+                    };
+
+                    for (const document of vscode.workspace.textDocuments) {
+                        if (!document.isDirty) continue;
+
+                        const documentWorkspace = vscode.workspace.getWorkspaceFolder(document.uri);
+                        if (!documentWorkspace || !samePath(documentWorkspace.uri.fsPath, workspaceRoot)) continue;
+
+                        const documentPath = document.uri.fsPath;
+                        matches = matches.filter(match => !samePath(path.resolve(workspaceRoot, match.file), documentPath));
+
+                        if (isExcludedByWorkspaceSettings(document.uri) ||
+                            shouldExcludeFile(document.uri, '**/node_modules/**,**/.git/**')) {
+                            continue;
+                        }
+
+                        const documentMatches: LineMatch[] = [];
+                        await updateDecorationsInMemory(document, {
+                            id: '',
+                            searchTerm,
+                            decorationType: previewDecorationType,
+                            color: '',
+                            isRegex: false,
+                            isCaseSensitive: false,
+                            isWholeWord: false
+                        }, [], documentMatches);
+
+                        const relativePath = path.relative(workspaceRoot, documentPath);
+                        for (const match of documentMatches) {
+                            matches.push({
+                                line: match.line,
+                                column: match.column,
+                                matchEnd: match.matchEnd,
+                                text: match.lineText,
+                                file: relativePath
+                            });
+                        }
+                    }
+
+                    decorations.length = 0;
+                    for (const match of matches) {
+                        if (!samePath(path.resolve(workspaceRoot, match.file), editor.document.uri.fsPath)) continue;
+                        const start = new vscode.Position(match.line - 1, match.column);
+                        const end = new vscode.Position(match.line - 1, match.matchEnd);
+                        decorations.push({ range: new vscode.Range(start, end) });
                     }
 
                     editor.setDecorations(previewDecorationType, decorations);
