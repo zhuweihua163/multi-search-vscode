@@ -368,7 +368,7 @@ async function addSelectionToGlobalSearch() {
                         const documentMatches: LineMatch[] = [];
                         await updateDecorationsInMemory(document, {
                             id: '',
-                            searchTerm,
+                            searchTerm: searchText,
                             decorationType: previewDecorationType,
                             color: '',
                             isRegex: false,
