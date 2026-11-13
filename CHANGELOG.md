@@ -5,6 +5,11 @@ All notable changes to the "multi-search-vscode" extension will be documented in
 <!-- Check [Keep a Changelog](https://keepachangelog.com/) for recommendations on how to structure this file. -->
 
 
+## [1.0.3]
+
+- Refresh search results when matched lines change.
+- Clear stale results when a file search has no matches.
+
 ## [1.0.2]
 
 - Include unsaved changes in global search results.
